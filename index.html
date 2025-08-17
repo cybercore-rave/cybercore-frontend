@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Reserve — cyber//core</title>
+  <style>
+    *,*::before,*::after{ box-sizing:border-box }
+    html{ -webkit-text-size-adjust:100% }
+    body{ margin:0; background:#000; color:#fff; font-family:Inter,Arial,sans-serif }
+    .main{ padding:16px }
+    .card{
+      width:100%; max-width:640px; margin:24px auto; background:#0d0d0d;
+      border-radius:16px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,.6)
+    }
+    .logo-wrap{ text-align:center; margin-bottom:16px }
+    .logo{ display:inline-block; width:min(70%,240px); height:auto }
+    h2{ margin:0 0 16px }
+    label{ display:block; margin-top:12px; font-size:14px; color:#cfcfcf }
+    .req::after{ content:" *"; color:#ff6b6b }
+    input,select{ width:100%; padding:12px; border-radius:10px; border:1px solid #2f2f2f; background:#111; color:#fff }
+    .price{ font-size:14px; color:#c4faf8; margin-top:6px; min-height:1em }
+    button{ width:100%; margin-top:16px; padding:12px 16px; border:0; border-radius:12px; background:#9800ff; color:#fff; font-weight:600; cursor:pointer }
+    button:hover{ transform:translateY(-1px); filter:brightness(1.1) }
+    button:active{ transform:translateY(0); filter:brightness(0.95) }
+    @media (max-width:900px){
+      .main{ padding:8px }
+      .card{ max-width:none; width:100%; margin:8px auto; border-radius:12px; padding:16px }
+      input,select,button{ font-size:16px }
+    }
+  </style>
+</head>
+<body>
+  <div class="main">
+    <div class="card">
+      <div class="logo-wrap"><img class="logo" src="logo.png" alt="cyber//core"></div>
+
+      <h2>Reserve your tier</h2>
+
+      <label class="req">Name</label>
+      <input id="name" placeholder="Your name" autocomplete="name">
+
+      <label class="req">Email</label>
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
+
+      <label>Tier</label>
+      <select id="tier"></select>
+      <div id="price" class="price"></div>
+
+      <button id="submit" disabled>Reserve</button>
+      <div id="msg" style="margin-top:12px; min-height:20px"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api';
+    const tierSel = document.getElementById('tier');
+    const priceEl = document.getElementById('price');
+    const nameEl  = document.getElementById('name');
+    const emailEl = document.getElementById('email');
+    const submit  = document.getElementById('submit');
+    const msg     = document.getElementById('msg');
+
+    let tiers = [];
+    function updatePrice(){
+      const t = tiers.find(x => x.tier === tierSel.value);
+      priceEl.textContent = t ? `Price: $${t.price} TTD` : '';
+    }
+    function updateButton(){
+      const ok = nameEl.value.trim() && emailEl.validity.valid && tierSel.value;
+      submit.disabled = !ok;
+    }
+
+    async function loadTiers(){
+      msg.textContent = '';
+      const res = await fetch(API + '?endpoint=tiers');
+      const json = await res.json();
+      tiers = json.ok ? json.data : [];
+      tierSel.innerHTML = '';
+      if (!tiers.length){
+        tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
+        priceEl.textContent = '';
+      } else {
+        tiers.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.tier;
+          opt.textContent = `${t.tier} — ${t.remaining} left`;
+          tierSel.appendChild(opt);
+        });
+        updatePrice();
+      }
+      updateButton();
+    }
+
+    async function reserve(){
+      msg.textContent = '';
+      submit.disabled = true; const old = submit.textContent; submit.textContent = 'Reserving…';
+      try{
+        const res = await fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type':'application/json' },
+          body: JSON.stringify({
+            endpoint: 'reserve',
+            payload: {
+              name: nameEl.value.trim(),
+              email: emailEl.value.trim(),
+              tier: tierSel.value
+            }
+          })
+        });
+        const json = await res.json();
+        if (json.ok){
+          msg.style.color = '#c4faf8';
+          msg.textContent = 'You’re in. Check your email for your QR code.';
+          loadTiers();
+        } else {
+          msg.style.color = '#ff6b6b';
+          msg.textContent = json.error || 'Error, try again.';
+          loadTiers();
+        }
+      } catch(e){
+        msg.style.color = '#ff6b6b';
+        msg.textContent = 'Network error. Try again.';
+      } finally {
+        submit.textContent = old; updateButton();
+      }
+    }
+
+    nameEl.addEventListener('input', updateButton);
+    emailEl.addEventListener('input', updateButton);
+    tierSel.addEventListener('change', () => { updatePrice(); updateButton(); });
+    submit.addEventListener('click', reserve);
+
+    loadTiers();
+  </script>
+</body>
+</html>

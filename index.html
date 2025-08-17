@@ -53,7 +53,7 @@
   </div>
 
   <script>
-    const API = '/api/proxy';
+    // ----- DOM refs
     const tierSel = document.getElementById('tier');
     const priceEl = document.getElementById('price');
     const nameEl  = document.getElementById('name');
@@ -61,7 +61,10 @@
     const submit  = document.getElementById('submit');
     const msg     = document.getElementById('msg');
 
-    let tiers = [];
+    let API = null;           // will be detected
+    let tiers = [];           // cache
+
+    // ----- Helpers
     function updatePrice(){
       const t = tiers.find(x => x.tier === tierSel.value);
       priceEl.textContent = t ? `Price: $${t.price} TTD` : '';
@@ -70,26 +73,52 @@
       const ok = nameEl.value.trim() && emailEl.validity.valid && tierSel.value;
       submit.disabled = !ok;
     }
+    function showError(text){
+      msg.style.color = '#ff6b6b';
+      msg.textContent = text;
+    }
+    function showInfo(text){
+      msg.style.color = '#c4faf8';
+      msg.textContent = text;
+    }
+
+    // Try /api, fall back to /api/proxy
+    async function detectApiBase(){
+      const candidates = ['/api', '/api/proxy'];
+      for (const base of candidates){
+        try{
+          const r = await fetch(`${base}?endpoint=health`, { cache:'no-store' });
+          const j = await r.json();
+          if (j && j.ok) return base;
+        }catch(e){}
+      }
+      return null;
+    }
 
     async function loadTiers(){
       msg.textContent = '';
-      const res = await fetch(API + '?endpoint=tiers');
-      const json = await res.json();
-      tiers = json.ok ? json.data : [];
-      tierSel.innerHTML = '';
-      if (!tiers.length){
-        tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
-        priceEl.textContent = '';
-      } else {
-        tiers.forEach(t => {
-          const opt = document.createElement('option');
-          opt.value = t.tier;
-          opt.textContent = `${t.tier} — ${t.remaining} left`;
-          tierSel.appendChild(opt);
-        });
-        updatePrice();
+      try{
+        const res = await fetch(`${API}?endpoint=tiers`, { cache:'no-store' });
+        const json = await res.json();
+        tiers = json.ok ? json.data : [];
+        tierSel.innerHTML = '';
+        if (!tiers.length){
+          tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
+          priceEl.textContent = '';
+        } else {
+          tiers.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.tier;
+            opt.textContent = `${t.tier} — ${t.remaining} left`;
+            tierSel.appendChild(opt);
+          });
+          updatePrice();
+        }
+        updateButton();
+      }catch(err){
+        showError('Could not load tiers. Check API route/env vars.');
+        console.error('loadTiers error:', err);
       }
-      updateButton();
     }
 
     async function reserve(){
@@ -110,28 +139,39 @@
         });
         const json = await res.json();
         if (json.ok){
-          msg.style.color = '#c4faf8';
-          msg.textContent = 'You’re in. Check your email for your QR code.';
-          loadTiers();
+          showInfo('You’re in. Check your email for your QR code.');
+          await loadTiers();
         } else {
-          msg.style.color = '#ff6b6b';
-          msg.textContent = json.error || 'Error, try again.';
-          loadTiers();
+          showError(json.error || 'Error, try again.');
+          await loadTiers();
         }
       } catch(e){
-        msg.style.color = '#ff6b6b';
-        msg.textContent = 'Network error. Try again.';
+        showError('Network error. Try again.');
+        console.error('reserve error:', e);
       } finally {
         submit.textContent = old; updateButton();
       }
     }
 
-    nameEl.addEventListener('input', updateButton);
-    emailEl.addEventListener('input', updateButton);
-    tierSel.addEventListener('change', () => { updatePrice(); updateButton(); });
-    submit.addEventListener('click', reserve);
+    // ----- Wire up and boot
+    async function init(){
+      API = await detectApiBase();
+      if (!API){
+        showError('API not reachable (neither /api nor /api/proxy responded).');
+        console.error('API detection failed.');
+        return;
+      }
+      console.log('Using API base:', API);
 
-    loadTiers();
+      nameEl.addEventListener('input', updateButton);
+      emailEl.addEventListener('input', updateButton);
+      tierSel.addEventListener('change', () => { updatePrice(); updateButton(); });
+      submit.addEventListener('click', reserve);
+
+      await loadTiers();
+    }
+
+    init();
   </script>
 </body>
 </html>

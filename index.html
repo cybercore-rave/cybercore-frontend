@@ -24,6 +24,14 @@
     html{ -webkit-text-size-adjust:100% }
     body{ margin:0; background:var(--bg); color:var(--text); font-family:Inter,Arial,sans-serif }
 
+    /* doors-open banner */
+    .open-banner{
+      background:#111; border:1px solid #333; color:#fff;
+      padding:10px 14px; margin:12px auto; border-radius:10px;
+      max-width:640px; width:100%; text-align:center;
+    }
+    .open-banner strong{ color:#c4faf8 }
+
     .main{ padding:16px }
     .card{
       width:100%; max-width:640px; margin:24px auto; background:var(--card);
@@ -91,54 +99,41 @@
     }
     .btn-ghost:hover{ background:rgba(152,0,255,.12) }
 
-    /* tiny link-style button */
-    .link-btn{
-      background:transparent; border:0; color:var(--accent);
-      text-decoration:underline; font-size:12px; padding:0; margin-top:6px; cursor:pointer;
-    }
-
     @media (max-width:900px){
       .main{ padding:8px }
       .card{ max-width:none; width:100%; margin:8px auto; border-radius:12px; padding:16px }
       input,select,.btn{ font-size:16px }
       .actions .btn{ width:100% } /* stack buttons on mobile */
     }
-
-    /* Paused visual cue (optional dim) */
-    .paused { opacity:.75; filter:saturate(.85); }
   </style>
 </head>
 <body>
+
+  <!-- DOORS-OPEN banner -->
+  <div id="openBanner" class="open-banner" hidden>
+    <strong>We’re live.</strong> Online reservations are paused while doors are open (9pm–3am).
+  </div>
+
   <div class="main">
     <div class="card" id="formCard">
       <div class="logo-wrap"><img class="logo" src="logo.png" alt="cyber//core"></div>
 
       <h2>Reserve your tier</h2>
 
-      <!-- pause banner -->
-      <div id="pause" style="display:none; margin:8px 0 12px; padding:10px 12px; background:#141414; border:1px solid #262626; border-left:4px solid #9800ff; color:#ddd; border-radius:10px;">
-        Reservations are temporarily paused. Please check back soon.
-      </div>
+      <label class="req" for="name">Name</label>
+      <input id="name" placeholder="Your name" autocomplete="name" required>
 
-      <!-- wrap inputs in a fieldset so we can disable everything at once -->
-      <fieldset id="fields" style="border:0; padding:0; margin:0;">
-        <label class="req" for="name">Name</label>
-        <input id="name" placeholder="Your name" autocomplete="name" required>
+      <label class="req" for="email">Email</label>
+      <input id="email" type="email" required
+             placeholder="you@example.com" autocomplete="email"
+             pattern="^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$">
+      <div id="emailHelp" class="help">Please enter a valid email address.</div>
 
-        <label class="req" for="email">Email</label>
-        <input id="email" type="email" required
-               placeholder="you@example.com" autocomplete="email"
-               pattern="^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$">
-        <div id="emailHelp" class="help">Please enter a valid email address.</div>
+      <label for="tier">Tier</label>
+      <select id="tier"></select>
+      <div id="price" class="price"></div>
 
-        <label for="tier">Tier</label>
-        <select id="tier"></select>
-        <div id="price" class="price"></div>
-        <button id="refresh" class="link-btn" style="display:none" type="button">Refresh availability</button>
-
-        <button id="submit" class="btn btn-primary" disabled>Reserve</button>
-      </fieldset>
-
+      <button id="submit" class="btn btn-primary" disabled>Reserve</button>
       <div id="msg" style="margin-top:12px; min-height:22px"></div>
     </div>
   </div>
@@ -162,6 +157,7 @@
 
   <script>
     // -------- DOM refs --------
+    const openBanner = document.getElementById('openBanner');
     const tierSel = document.getElementById('tier');
     const priceEl = document.getElementById('price');
     const nameEl  = document.getElementById('name');
@@ -173,13 +169,10 @@
     const successDetails = document.getElementById('successDetails');
     const successId = document.getElementById('successId');
     const againBtn = document.getElementById('again');
-    const fieldsFs = document.getElementById('fields');
-    const pauseBanner = document.getElementById('pause');
-    const refreshBtn  = document.getElementById('refresh');
 
-    let API = null;   // detected at runtime
-    let tiers = [];   // current tiers
-    let lowStock = false;
+    // POST base for reservations
+    let API = '/api';
+    let tiers = [];
 
     // -------- UI helpers --------
     function updatePrice(){
@@ -187,13 +180,12 @@
       priceEl.textContent = t ? `Price: $${t.price} TTD` : '';
     }
     function updateButton(){
-      const ok = !fieldsFs.disabled && nameEl.value.trim() && emailEl.validity.valid && tierSel.value;
+      const ok = nameEl.value.trim() && emailEl.validity.valid && tierSel.value && !nameEl.disabled;
       submit.disabled = !ok;
     }
     function showError(text){ msg.style.color = '#ff6b6b'; msg.textContent = text; }
     function showInfo(text){ msg.style.color = '#c4faf8'; msg.textContent = text; }
 
-    // Live email validation
     function validateEmail(){
       if (!emailEl.value.trim()){
         emailEl.classList.remove('invalid');
@@ -209,49 +201,31 @@
       }
     }
 
-    // -------- Status handling (pause / resume) --------
-    function enforceStatus(open){
-      if (!open){
-        pauseBanner.style.display = 'block';
-        fieldsFs.disabled = true;
-        document.getElementById('formCard').classList.add('paused');
-        submit.disabled = true;
-      } else {
-        pauseBanner.style.display = 'none';
-        fieldsFs.disabled = false;
-        document.getElementById('formCard').classList.remove('paused');
-        updateButton();
-      }
+    // Enable/disable the entire form
+    function setFormEnabled(enabled){
+      nameEl.disabled = !enabled;
+      emailEl.disabled = !enabled;
+      tierSel.disabled = !enabled;
+      submit.textContent = enabled ? 'Reserve' : 'Paused';
+      updateButton();
     }
 
-    async function checkStatus(){
-      try {
-        const r = await fetch(`${API}?endpoint=status`, { cache:'no-store' });
+    // Check if doors are open (controls banner + disabled state)
+    async function checkOpen(){
+      try{
+        const r = await fetch('/api/open', { cache:'no-store' });
         const j = await r.json();
-        enforceStatus(j.ok ? !!j.open : true);
-      } catch (_) {
-        enforceStatus(true); // assume open if status not reachable
+        const isOpen = j.ok && j.open === true;
+        openBanner.hidden = !isOpen;
+        setFormEnabled(!isOpen);
+      }catch(_){
+        // If the check fails, keep the form enabled (don’t block users)
+        openBanner.hidden = true;
+        setFormEnabled(true);
       }
     }
 
-    // -------- API base detection --------
-    async function detectApiBase(){
-      const bases = ['/api', '/api/index', '/api/proxy'];
-      for (const base of bases){
-        try{
-          const r = await fetch(`${base}?endpoint=tiers`, { cache:'no-store' });
-          const j = await r.json().catch(()=>null);
-          if (j && j.ok && Array.isArray(j.data)) {
-            console.log('Using API base:', base);
-            return base;
-          }
-        }catch(e){}
-      }
-      console.error('No API base detected.');
-      return null;
-    }
-
-    // -------- Load tiers (no auto-poll; show manual refresh when low) --------
+    // -------- Load tiers (single fetch, no 5s refresh) --------
     async function loadTiers(){
       tierSel.disabled = true;
       tierSel.innerHTML = '<option disabled selected>Loading tiers…</option>';
@@ -268,7 +242,6 @@
         if (!tiers.length){
           tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
           priceEl.textContent = '';
-          lowStock = false;
         } else {
           for (const t of tiers){
             const opt = document.createElement('option');
@@ -277,12 +250,7 @@
             tierSel.appendChild(opt);
           }
           updatePrice();
-          lowStock = tiers.some(t => t.remaining <= 5);
         }
-
-        // Show a subtle manual refresh link only when low
-        refreshBtn.style.display = lowStock ? 'inline' : 'none';
-
         tierSel.disabled = false;
         updateButton();
         msg.textContent = '';
@@ -298,8 +266,7 @@
 
     // -------- Success / reset --------
     function showSuccess({ name, email, tier, price, reservationID }){
-      fieldsFs.disabled = true;
-      submit.disabled = true;
+      nameEl.disabled = true; emailEl.disabled = true; tierSel.disabled = true; submit.disabled = true;
       submit.textContent = 'Reserved';
 
       const priceText = (price != null) ? ` — $${price} TTD` : '';
@@ -310,7 +277,7 @@
 
     function resetForm(){
       success.classList.remove('show');
-      fieldsFs.disabled = false;
+      nameEl.disabled = false; emailEl.disabled = false; tierSel.disabled = false;
       nameEl.value = ''; emailEl.value = ''; emailEl.classList.remove('invalid'); emailHelp.classList.remove('show');
       if (tierSel.options.length) tierSel.selectedIndex = 0;
       submit.textContent = 'Reserve';
@@ -367,25 +334,20 @@
 
     // -------- Boot --------
     async function init(){
-      // clear any old timers from previous versions
-      try { clearTimeout(window.__tiersTimer); } catch(_){}
-      API = await detectApiBase();
-      if (!API){ showError('API not reachable.'); return; }
-
+      // simple listeners
       nameEl.addEventListener('input', updateButton);
       emailEl.addEventListener('input', () => { validateEmail(); updateButton(); });
       emailEl.addEventListener('blur',  validateEmail);
       tierSel.addEventListener('change', () => { updatePrice(); updateButton(); });
       submit.addEventListener('click', reserve);
       againBtn.addEventListener('click', resetForm);
-      refreshBtn.addEventListener('click', loadTiers);
 
-      await checkStatus(); // show/hide banner & disable/enable all fields
       await loadTiers();
-    }
+      await checkOpen(); // check once on load
 
-    // Remove any stale cache key from old builds
-    try { localStorage.removeItem('tiers_cache_v1'); } catch (_) {}
+      // If you want periodic re-checks (not tiers), uncomment:
+      // setInterval(checkOpen, 60000); // every 60s
+    }
 
     init();
   </script>

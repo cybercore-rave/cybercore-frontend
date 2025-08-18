@@ -1,0 +1,9 @@
+{
+  "name": "cybercore-frontend",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@upstash/redis": "^1.28.3",
+    "@upstash/ratelimit": "^1.0.3"
+  }
+}

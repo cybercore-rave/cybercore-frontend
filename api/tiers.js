@@ -32,3 +32,7 @@ export default async function handler(req, res) {
     res.status(200).json({ ok:false, error: e.message || 'Fetch failed' });
   }
 }
+
+const FALLBACK = 'https://script.google.com/macros/s/AKfycbxSLOQWyXNEhHQPzHX4gSnwSX7yaK7EUK2wdeAmCyaZL6n5TWUfXIk_aYHtBhSux5XWug/exec'; // your /exec
+const base = process.env.GAS_URL || FALLBACK;
+

@@ -8,6 +8,7 @@
     *,*::before,*::after{ box-sizing:border-box }
     html{ -webkit-text-size-adjust:100% }
     body{ margin:0; background:#000; color:#fff; font-family:Inter,Arial,sans-serif }
+
     .main{ padding:16px }
     .card{
       width:100%; max-width:640px; margin:24px auto; background:#0d0d0d;
@@ -15,14 +16,53 @@
     }
     .logo-wrap{ text-align:center; margin-bottom:16px }
     .logo{ display:inline-block; width:min(70%,240px); height:auto }
+
     h2{ margin:0 0 16px }
     label{ display:block; margin-top:12px; font-size:14px; color:#cfcfcf }
     .req::after{ content:" *"; color:#ff6b6b }
-    input,select{ width:100%; padding:12px; border-radius:10px; border:1px solid #2f2f2f; background:#111; color:#fff }
+
+    input,select{
+      width:100%; padding:12px; border-radius:10px;
+      border:1px solid #2f2f2f; background:#111; color:#fff
+    }
+
     .price{ font-size:14px; color:#c4faf8; margin-top:6px; min-height:1em }
-    button{ width:100%; margin-top:16px; padding:12px 16px; border:0; border-radius:12px; background:#9800ff; color:#fff; font-weight:600; cursor:pointer }
+
+    button{
+      width:100%; margin-top:16px; padding:12px 16px;
+      border:0; border-radius:12px; background:#9800ff; color:#fff; font-weight:600;
+      cursor:pointer; transition:transform .12s ease, filter .12s ease
+    }
     button:hover{ transform:translateY(-1px); filter:brightness(1.1) }
     button:active{ transform:translateY(0); filter:brightness(0.95) }
+    button[disabled]{ opacity:.6; cursor:not-allowed }
+
+    /* Full-screen success overlay */
+    .success {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,.92);
+      display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .success.show { display: flex; }
+    .success .panel{
+      background:#0d0d0d; width:min(96vw, 640px);
+      border-radius:16px; padding:24px; text-align:center;
+      box-shadow:0 12px 36px rgba(0,0,0,.7)
+    }
+    .success h2{ margin:6px 0 8px }
+    .success p{ margin:6px 0; color:#cfcfcf }
+    .kicker{ color:#c4faf8; letter-spacing:.05em; text-transform:uppercase; font-size:12px }
+    .row{ margin-top:10px; font-size:14px; color:#ddd }
+    .badge{
+      display:inline-block; margin-top:10px; padding:6px 10px; border-radius:999px;
+      background:#141414; border:1px solid #262626; font-size:12px; color:#bbb
+    }
+    .cta{
+      margin-top:18px; display:inline-block; padding:12px 16px; border-radius:12px;
+      background:#9800ff; color:#fff; text-decoration:none; font-weight:600
+    }
+
     @media (max-width:900px){
       .main{ padding:8px }
       .card{ max-width:none; width:100%; margin:8px auto; border-radius:12px; padding:16px }
@@ -32,39 +72,57 @@
 </head>
 <body>
   <div class="main">
-    <div class="card">
+    <div class="card" id="formCard">
       <div class="logo-wrap"><img class="logo" src="logo.png" alt="cyber//core"></div>
 
       <h2>Reserve your tier</h2>
 
-      <label class="req">Name</label>
+      <label class="req" for="name">Name</label>
       <input id="name" placeholder="Your name" autocomplete="name">
 
-      <label class="req">Email</label>
+      <label class="req" for="email">Email</label>
       <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
 
-      <label>Tier</label>
+      <label for="tier">Tier</label>
       <select id="tier"></select>
       <div id="price" class="price"></div>
 
       <button id="submit" disabled>Reserve</button>
-      <div id="msg" style="margin-top:12px; min-height:20px"></div>
+      <div id="msg" style="margin-top:12px; min-height:22px"></div>
+    </div>
+  </div>
+
+  <!-- Success overlay -->
+  <div class="success" id="success">
+    <div class="panel">
+      <img class="logo" src="logo.png" alt="cyber//core" style="width:180px;height:auto">
+      <div class="kicker">Reservation confirmed</div>
+      <h2>You're in — check your email for your QR code.</h2>
+
+      <div id="successDetails" class="row"></div>
+      <div id="successId" class="badge"></div>
+
+      <a class="cta" href="https://instagram.com/cybercore.rave" target="_blank" rel="noopener">Event details</a>
     </div>
   </div>
 
   <script>
-    // ----- DOM refs
+    // DOM refs
     const tierSel = document.getElementById('tier');
     const priceEl = document.getElementById('price');
     const nameEl  = document.getElementById('name');
     const emailEl = document.getElementById('email');
     const submit  = document.getElementById('submit');
     const msg     = document.getElementById('msg');
+    const success = document.getElementById('success');
+    const successDetails = document.getElementById('successDetails');
+    const successId = document.getElementById('successId');
+    const formCard = document.getElementById('formCard');
 
-    let API = null;           // will be detected
-    let tiers = [];           // cache
+    let API = null;       // detected at runtime
+    let tiers = [];       // cached tiers
 
-    // ----- Helpers
+    // Helpers
     function updatePrice(){
       const t = tiers.find(x => x.tier === tierSel.value);
       priceEl.textContent = t ? `Price: $${t.price} TTD` : '';
@@ -73,16 +131,10 @@
       const ok = nameEl.value.trim() && emailEl.validity.valid && tierSel.value;
       submit.disabled = !ok;
     }
-    function showError(text){
-      msg.style.color = '#ff6b6b';
-      msg.textContent = text;
-    }
-    function showInfo(text){
-      msg.style.color = '#c4faf8';
-      msg.textContent = text;
-    }
+    function showError(text){ msg.style.color = '#ff6b6b'; msg.textContent = text; }
+    function showInfo(text){ msg.style.color = '#c4faf8'; msg.textContent = text; }
 
-    // Try /api, fall back to /api/proxy
+    // Detect /api or /api/proxy
     async function detectApiBase(){
       const candidates = ['/api', '/api/proxy'];
       for (const base of candidates){
@@ -97,126 +149,97 @@
 
     async function loadTiers(){
       msg.textContent = '';
-      try{
-        const res = await fetch(`${API}?endpoint=tiers`, { cache:'no-store' });
-        const json = await res.json();
-        tiers = json.ok ? json.data : [];
-        tierSel.innerHTML = '';
-        if (!tiers.length){
-          tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
-          priceEl.textContent = '';
-        } else {
-          tiers.forEach(t => {
-            const opt = document.createElement('option');
-            opt.value = t.tier;
-            opt.textContent = `${t.tier} — ${t.remaining} left`;
-            tierSel.appendChild(opt);
-          });
-          updatePrice();
-        }
-        updateButton();
-      }catch(err){
-        showError('Could not load tiers. Check API route/env vars.');
-        console.error('loadTiers error:', err);
+      const res = await fetch(`${API}?endpoint=tiers`, { cache:'no-store' });
+      const json = await res.json();
+      tiers = json.ok ? json.data : [];
+      tierSel.innerHTML = '';
+      if (!tiers.length){
+        tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
+        priceEl.textContent = '';
+      } else {
+        tiers.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.tier;
+          opt.textContent = `${t.tier} — ${t.remaining} left`;
+          tierSel.appendChild(opt);
+        });
+        updatePrice();
       }
+      updateButton();
     }
 
-  async function reserve(){
-  // clear + disable while sending
-  msg.textContent = '';
-  msg.style.color = '#cfcfcf';
-  submit.disabled = true;
-  const prev = submit.textContent;
-  submit.textContent = 'Reserving…';
+    function showSuccess({ name, email, tier, price, reservationID }){
+      // lock the form to avoid duplicates
+      nameEl.disabled = true; emailEl.disabled = true; tierSel.disabled = true; submit.disabled = true;
+      submit.textContent = 'Reserved';
 
-  try {
-    const res = await fetch(API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        endpoint: 'reserve',
-        payload: {
+      // fill overlay
+      const priceText = (price != null) ? ` — $${price} TTD` : '';
+      successDetails.textContent = `${name} • ${email} • ${tier}${priceText}`;
+      successId.textContent = reservationID ? `Reservation ID: ${reservationID}` : '';
+      success.classList.add('show');
+
+      // ensure it’s visible
+      success.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    async function reserve(){
+      msg.textContent = ''; showInfo(''); // clear
+      submit.disabled = true;
+      const prev = submit.textContent;
+      submit.textContent = 'Reserving…';
+
+      try{
+        const payload = {
           name: nameEl.value.trim(),
           email: emailEl.value.trim(),
           tier: tierSel.value
-        }
-      })
-    });
+        };
 
-    const json = await res.json();
-
-    if (json.ok) {
-      // ✅ Success UI
-      msg.style.color = '#c4faf8';
-      msg.innerHTML = `You’re in. Check your email for your QR code.${
-        json.reservationID ? `<div style="margin-top:6px;font-size:12px;color:#9aa;">Reservation ID: ${json.reservationID}</div>` : ''
-      }`;
-
-      // lock the form to prevent double-submit
-      nameEl.disabled = true;
-      emailEl.disabled = true;
-      tierSel.disabled = true;
-      submit.textContent = 'Reserved';
-      submit.disabled = true;
-
-      // refresh remaining counts
-      await loadTiers();
-
-      // make sure user sees the message
-      msg.scrollIntoView({behavior:'smooth', block:'center'});
-      return;
-    }
-
-    // ❌ Backend returned an error (show it)
-    msg.style.color = '#ff6b6b';
-    msg.textContent = json.error || 'Error, try again.';
-  } catch (e) {
-    msg.style.color = '#ff6b6b';
-    msg.textContent = 'Network error. Try again.';
-    console.error('reserve error:', e);
-  } finally {
-    // If not locked by success, restore button
-    if (!submit.disabled) {
-      submit.textContent = prev;
-      submit.disabled = false;
-    }
-  }
-}
-
+        const res = await fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: 'reserve', payload })
+        });
         const json = await res.json();
+
         if (json.ok){
-          showInfo('You’re in. Check your email for your QR code.');
-          await loadTiers();
-        } else {
-          showError(json.error || 'Error, try again.');
-          await loadTiers();
+          // try to pull price for display
+          const t = tiers.find(x => x.tier === payload.tier);
+          showSuccess({
+            name: payload.name,
+            email: payload.email,
+            tier: payload.tier,
+            price: t ? t.price : undefined,
+            reservationID: json.reservationID
+          });
+          // refresh tiers count in background
+          loadTiers();
+          return;
         }
-      } catch(e){
+
+        showError(json.error || 'Error, try again.');
+      } catch (e){
         showError('Network error. Try again.');
         console.error('reserve error:', e);
       } finally {
-        submit.textContent = old; updateButton();
+        if (!success.classList.contains('show')) {
+          submit.textContent = prev;
+          updateButton();
+        }
       }
     }
 
-    // ----- Wire up and boot
+    // Wire up + boot
     async function init(){
       API = await detectApiBase();
-      if (!API){
-        showError('API not reachable (neither /api nor /api/proxy responded).');
-        console.error('API detection failed.');
-        return;
-      }
-      console.log('Using API base:', API);
-
+      if (!API){ showError('API not reachable.'); return; }
       nameEl.addEventListener('input', updateButton);
       emailEl.addEventListener('input', updateButton);
       tierSel.addEventListener('change', () => { updatePrice(); updateButton(); });
       submit.addEventListener('click', reserve);
-
       await loadTiers();
     }
-
     init();
   </script>
 </body>

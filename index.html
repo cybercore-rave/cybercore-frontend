@@ -263,7 +263,11 @@ const TIER_CACHE_TTL = 60_000; // 60s
       return null;
     }
 
-   async function loadTiers(){
+// client cache (60s)
+const TIER_CACHE_KEY = 'tiers_cache_v2';
+const TIER_CACHE_TTL = 60_000; // 60s
+
+async function loadTiers(){
   // 0) Instant render from cache if fresh
   try {
     const cached = JSON.parse(localStorage.getItem(TIER_CACHE_KEY) || 'null');
@@ -286,20 +290,27 @@ const TIER_CACHE_TTL = 60_000; // 60s
       refreshBtn.style.display = tiers.some(t => t.remaining <= 5) ? 'inline' : 'none';
       updateButton();
     } else {
-      // show a small skeleton the first time
       tierSel.disabled = true;
       tierSel.innerHTML = '<option disabled selected>Loading tiers…</option>';
       priceEl.textContent = '';
       updateButton();
     }
-  } catch(_) { /* ignore cache issues */ }
+  } catch(_) {}
 
-  // 1) Always fetch fresh in the background (SWR)
+  // 1) Fetch fresh (prefer /api/tiers; fallback to `${API}?endpoint=tiers`)
   try {
-    const res = await fetch('/api/tiers', { cache:'no-store' });
-    const json = await res.json();
+    let res = await fetch('/api/tiers', { cache:'no-store' });
+    let json = await res.json();
 
-    if (!json.ok || !Array.isArray(json.data)) throw new Error(json.error || 'Bad response');
+    if (!json || json.ok !== true || !Array.isArray(json.data)) {
+      // fallback to the legacy proxy
+      res = await fetch(`${API}?endpoint=tiers`, { cache:'no-store' });
+      json = await res.json();
+    }
+
+    if (!json || json.ok !== true || !Array.isArray(json.data)) {
+      throw new Error(json && json.error || 'Bad response');
+    }
 
     tiers = json.data;
     tierSel.innerHTML = '';
@@ -321,11 +332,9 @@ const TIER_CACHE_TTL = 60_000; // 60s
     updateButton();
     msg.textContent = '';
 
-    // store fresh result
     try { localStorage.setItem(TIER_CACHE_KEY, JSON.stringify({ t: Date.now(), data: tiers })); } catch(_){}
   } catch (e){
     console.error('loadTiers error:', e);
-    // if we had nothing to show, provide a retry affordance
     if (!tierSel.options.length || tierSel.options[0].disabled) {
       tierSel.disabled = false;
       tierSel.innerHTML = '<option disabled selected>Could not load. Tap to retry.</option>';
@@ -335,6 +344,7 @@ const TIER_CACHE_TTL = 60_000; // 60s
     }
   }
 }
+
 
 
     // -------- Success / reset --------

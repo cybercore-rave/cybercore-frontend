@@ -187,6 +187,11 @@
     let tiers = [];   // current tiers
     let lowStock = false;
 
+    // client cache (60s)
+const TIER_CACHE_KEY = 'tiers_cache_v2';
+const TIER_CACHE_TTL = 60_000; // 60s
+
+
     // -------- UI helpers --------
     function updatePrice(){
       const t = tiers.find(x => x.tier === tierSel.value);
@@ -258,50 +263,79 @@
       return null;
     }
 
-    // -------- Load tiers (no auto-poll; show manual refresh when low) --------
-    async function loadTiers(){
+   async function loadTiers(){
+  // 0) Instant render from cache if fresh
+  try {
+    const cached = JSON.parse(localStorage.getItem(TIER_CACHE_KEY) || 'null');
+    if (cached && (Date.now() - cached.t) < TIER_CACHE_TTL && Array.isArray(cached.data)) {
+      tiers = cached.data;
+      tierSel.innerHTML = '';
+      if (!tiers.length){
+        tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
+        priceEl.textContent = '';
+      } else {
+        for (const t of tiers){
+          const opt = document.createElement('option');
+          opt.value = t.tier;
+          opt.textContent = `${t.tier} — ${t.remaining} left`;
+          tierSel.appendChild(opt);
+        }
+        updatePrice();
+      }
+      tierSel.disabled = false;
+      refreshBtn.style.display = tiers.some(t => t.remaining <= 5) ? 'inline' : 'none';
+      updateButton();
+    } else {
+      // show a small skeleton the first time
       tierSel.disabled = true;
       tierSel.innerHTML = '<option disabled selected>Loading tiers…</option>';
       priceEl.textContent = '';
       updateButton();
-
-      try {
-        const res = await fetch('/api/tiers', { cache:'no-store' });
-        const json = await res.json();
-        if (!json.ok || !Array.isArray(json.data)) throw new Error(json.error || 'Bad response');
-
-        tiers = json.data;
-        tierSel.innerHTML = '';
-        if (!tiers.length){
-          tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
-          priceEl.textContent = '';
-          lowStock = false;
-        } else {
-          for (const t of tiers){
-            const opt = document.createElement('option');
-            opt.value = t.tier;
-            opt.textContent = `${t.tier} — ${t.remaining} left`;
-            tierSel.appendChild(opt);
-          }
-          updatePrice();
-          lowStock = tiers.some(t => t.remaining <= 5);
-        }
-
-        // Show a subtle manual refresh link only when low
-        refreshBtn.style.display = lowStock ? 'inline' : 'none';
-
-        tierSel.disabled = false;
-        updateButton();
-        msg.textContent = '';
-      } catch (e){
-        console.error('loadTiers error:', e);
-        tierSel.disabled = false;
-        tierSel.innerHTML = '<option disabled selected>Could not load. Tap to retry.</option>';
-        const retry = () => { tierSel.removeEventListener('click', retry); loadTiers(); };
-        tierSel.addEventListener('click', retry, { once:true });
-        showError('Could not load tiers. Tap the dropdown to retry.');
-      }
     }
+  } catch(_) { /* ignore cache issues */ }
+
+  // 1) Always fetch fresh in the background (SWR)
+  try {
+    const res = await fetch('/api/tiers', { cache:'no-store' });
+    const json = await res.json();
+
+    if (!json.ok || !Array.isArray(json.data)) throw new Error(json.error || 'Bad response');
+
+    tiers = json.data;
+    tierSel.innerHTML = '';
+    if (!tiers.length){
+      tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
+      priceEl.textContent = '';
+    } else {
+      for (const t of tiers){
+        const opt = document.createElement('option');
+        opt.value = t.tier;
+        opt.textContent = `${t.tier} — ${t.remaining} left`;
+        tierSel.appendChild(opt);
+      }
+      updatePrice();
+    }
+
+    refreshBtn.style.display = tiers.some(t => t.remaining <= 5) ? 'inline' : 'none';
+    tierSel.disabled = false;
+    updateButton();
+    msg.textContent = '';
+
+    // store fresh result
+    try { localStorage.setItem(TIER_CACHE_KEY, JSON.stringify({ t: Date.now(), data: tiers })); } catch(_){}
+  } catch (e){
+    console.error('loadTiers error:', e);
+    // if we had nothing to show, provide a retry affordance
+    if (!tierSel.options.length || tierSel.options[0].disabled) {
+      tierSel.disabled = false;
+      tierSel.innerHTML = '<option disabled selected>Could not load. Tap to retry.</option>';
+      const retry = () => { tierSel.removeEventListener('click', retry); loadTiers(); };
+      tierSel.addEventListener('click', retry, { once:true });
+      showError('Could not load tiers. Tap the dropdown to retry.');
+    }
+  }
+}
+
 
     // -------- Success / reset --------
     function showSuccess({ name, email, tier, price, reservationID }){

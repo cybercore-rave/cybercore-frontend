@@ -1,13 +1,16 @@
+// /api/tiers.js
 export default async function handler(req, res) {
-  const { GAS_EXEC_URL } = process.env;
-  if (!GAS_EXEC_URL) return res.status(500).json({ ok: false, error: 'Missing GAS_EXEC_URL' });
-
   try {
-    const r = await fetch(`${GAS_EXEC_URL}?endpoint=tiers`, { cache: 'no-store' });
-    const j = await r.json().catch(() => ({ ok: false, error: `Upstream ${r.status}` }));
-    res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=60');
-    return res.status(200).json(j);
+    const upstream = `${process.env.GAS_URL}?endpoint=tiers`;
+    const r = await fetch(upstream, { cache: 'no-store' });
+    const json = await r.json();
+
+    // 30s CDN cache, allow 5 min stale-while-revalidate
+    res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+    res.status(200).json(json);
   } catch (e) {
-    return res.status(200).json({ ok: false, error: String(e) });
+    // brief cache for errors to avoid thundering herd
+    res.setHeader('Cache-Control', 'public, s-maxage=5');
+    res.status(200).json({ ok:false, error:'Upstream error' });
   }
 }

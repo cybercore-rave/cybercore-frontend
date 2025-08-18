@@ -225,14 +225,15 @@
     }
 
     async function checkStatus(){
-      try {
-        const r = await fetch(`${API}?endpoint=status`, { cache:'no-store' });
-        const j = await r.json();
-        enforceStatus(j.ok ? !!j.open : true);
-      } catch (_) {
-        enforceStatus(true); // assume open if status not reachable
-      }
-    }
+  try {
+    const r = await fetch('/api/status', { cache:'no-store' });
+    const j = await r.json();
+    enforceStatus(j.ok ? !!j.open : true);
+  } catch (_) {
+    enforceStatus(true); // assume open if status not reachable
+  }
+}
+
 
     // -------- API base detection --------
     async function detectApiBase(){

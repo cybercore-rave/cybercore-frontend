@@ -1,28 +1,26 @@
-// /api/index.js — proxy to Apps Script with basic rate-limit & CORS allowlist
+// /api/index.js — proxy to Apps Script with durable rate-limit & CORS allowlist
 
-// ----- Simple in-memory rate limit (per Vercel region instance) -----
-const WINDOW_MS = 15_000;     // 15s window
-const MAX_HITS  = 5;          // max requests per window per IP
-const hits = new Map();       // ip -> { n, t }
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+
+// ----- Durable global rate-limit (works across regions/instances) -----
+const redis = Redis.fromEnv();
+const ratelimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.fixedWindow(5, "15 s"), // 5 requests per 15 seconds
+  prefix: "rl:reserve"
+});
 
 function getIp(req) {
   const xf = req.headers["x-forwarded-for"];
   return (xf ? xf.split(",")[0] : "") || "unknown";
 }
-function tooMany(ip) {
-  const now = Date.now();
-  const rec = hits.get(ip) || { n: 0, t: now };
-  if (now - rec.t > WINDOW_MS) { rec.n = 0; rec.t = now; }
-  rec.n += 1;
-  hits.set(ip, rec);
-  return rec.n > MAX_HITS;
-}
 
-// ----- CORS allowlist (add your domains here) -----
+// ----- CORS allowlist -----
 const ALLOW_ORIGINS = new Set([
   "https://cybercorerave.com",
   "https://www.cybercorerave.com",
-  "https://cybercore-frontend-five.vercel.app" // keep your Vercel preview/primary too
+  "https://<your-vercel>.vercel.app" // replace with your actual Vercel domain
 ]);
 
 function setCors(req, res) {
@@ -52,7 +50,6 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const ep = req.query.endpoint;
 
-      // Health check (passthrough to Apps Script if available)
       if (ep === "health") {
         try {
           const r = await fetch(`${APPS}?endpoint=health`, { cache: "no-store" });
@@ -64,7 +61,6 @@ export default async function handler(req, res) {
         }
       }
 
-      // Still support GET /api?endpoint=tiers (though /api/tiers is faster)
       if (ep === "tiers") {
         const r = await fetch(`${APPS}?endpoint=tiers`, { cache: "no-store" });
         const j = await r.json();
@@ -76,20 +72,20 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
-      // Basic per-IP rate limit for reserve
-      const ip = getIp(req);
-      if (tooMany(ip)) {
-        return res.status(429).json({ ok:false, error:"Too many requests, try again in a moment." });
+      // Durable rate-limit
+      const ipKey = getIp(req) || req.headers["user-agent"] || "unknown";
+      const { success } = await ratelimit.limit(ipKey);
+      if (!success) {
+        return res.status(429).json({ ok:false, error:"Too many requests, try again shortly." });
       }
 
-      // Forward to Apps Script with secret injected
+      // Forward to Apps Script with secret
       const body = { ...(req.body || {}), secret: SECRET };
       const r = await fetch(APPS, {
         method: "POST",
         headers: { "Content-Type":"application/json" },
         body: JSON.stringify(body)
       });
-
       const text = await r.text();
       res.setHeader("Content-Type","application/json");
       return res.status(200).send(text);

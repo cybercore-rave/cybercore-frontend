@@ -105,6 +105,10 @@
       <div class="logo-wrap"><img class="logo" src="logo.png" alt="cyber//core"></div>
 
       <h2>Reserve your tier</h2>
+      <div id="pause" style="display:none; margin:8px 0 12px; padding:10px 12px; background:#141414; border:1px solid #262626; border-left:4px solid #9800ff; color:#ddd; border-radius:10px;">
+  Reservations are temporarily paused. Please check back soon.
+</div>
+
 
       <label class="req" for="name">Name</label>
       <input id="name" placeholder="Your name" autocomplete="name" required>
@@ -319,6 +323,30 @@
       }
     }
 
+    function enforceStatus(open){
+  const banner = document.getElementById('pause');
+  if (!open){
+    banner.style.display = 'block';
+    nameEl.disabled = true; emailEl.disabled = true; tierSel.disabled = true; submit.disabled = true;
+  } else {
+    banner.style.display = 'none';
+    nameEl.disabled = false; emailEl.disabled = false; tierSel.disabled = false;
+    updateButton();
+  }
+}
+
+async function checkStatus(){
+  try {
+    const r = await fetch(`${API}?endpoint=status`, { cache:'no-store' });
+    const j = await r.json();
+    enforceStatus(j.ok ? !!j.open : true);
+  } catch (_) {
+    // if status can’t be read, assume open
+    enforceStatus(true);
+  }
+}
+
+
     // -------- Boot --------
     async function init(){
       API = await detectApiBase();
@@ -332,6 +360,8 @@
       againBtn.addEventListener('click', resetForm);
 
       await loadTiers();
+      await checkStatus();
+
     }
 
     // If an old cache key was used previously, clear it once.

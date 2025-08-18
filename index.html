@@ -5,39 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Reserve — cyber//core</title>
   <style>
+    :root{
+      --bg:#000;
+      --card:#0d0d0d;
+      --text:#fff;
+      --muted:#cfcfcf;
+      --primary:#9800ff;   /* <-- cyber//core purple */
+      --accent:#c4faf8;
+      --border:#2f2f2f;
+    }
     *,*::before,*::after{ box-sizing:border-box }
     html{ -webkit-text-size-adjust:100% }
-    body{ margin:0; background:#000; color:#fff; font-family:Inter,Arial,sans-serif }
+    body{ margin:0; background:var(--bg); color:var(--text); font-family:Inter,Arial,sans-serif }
 
     .main{ padding:16px }
     .card{
-      width:100%; max-width:640px; margin:24px auto; background:#0d0d0d;
+      width:100%; max-width:640px; margin:24px auto; background:var(--card);
       border-radius:16px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,.6)
     }
     .logo-wrap{ text-align:center; margin-bottom:16px }
     .logo{ display:inline-block; width:min(70%,240px); height:auto }
 
     h2{ margin:0 0 16px }
-    label{ display:block; margin-top:12px; font-size:14px; color:#cfcfcf }
+    label{ display:block; margin-top:12px; font-size:14px; color:var(--muted) }
     .req::after{ content:" *"; color:#ff6b6b }
 
     input,select{
       width:100%; padding:12px; border-radius:10px;
-      border:1px solid #2f2f2f; background:#111; color:#fff
+      border:1px solid var(--border); background:#111; color:var(--text)
     }
+    .price{ font-size:14px; color:var(--accent); margin-top:6px; min-height:1em }
 
-    .price{ font-size:14px; color:#c4faf8; margin-top:6px; min-height:1em }
-
-    button{
-      width:100%; margin-top:16px; padding:12px 16px;
-      border:0; border-radius:12px; background:#9800ff; color:#fff; font-weight:600;
-      cursor:pointer; transition:transform .12s ease, filter .12s ease
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center;
+      gap:.5rem; text-decoration:none; user-select:none;
+      font-weight:600; border-radius:12px; padding:12px 16px; border:0; cursor:pointer;
+      transition:transform .12s ease, filter .12s ease, background .12s ease, color .12s ease, border-color .12s ease;
     }
-    button:hover{ transform:translateY(-1px); filter:brightness(1.1) }
-    button:active{ transform:translateY(0); filter:brightness(0.95) }
-    button[disabled]{ opacity:.6; cursor:not-allowed }
+    .btn-primary{
+      width:100%; background:var(--primary); color:#fff;
+    }
+    .btn-primary:hover{ transform:translateY(-1px); filter:brightness(1.1) }
+    .btn-primary:active{ transform:translateY(0); filter:brightness(0.95) }
+    .btn[disabled]{ opacity:.6; cursor:not-allowed }
 
-    /* Full-screen success overlay */
+    /* Success overlay (keeps brand colors) */
     .success {
       position: fixed; inset: 0; z-index: 1000;
       background: rgba(0,0,0,.92);
@@ -46,27 +58,29 @@
     }
     .success.show { display: flex; }
     .success .panel{
-      background:#0d0d0d; width:min(96vw, 640px);
-      border-radius:16px; padding:24px; text-align:center;
-      box-shadow:0 12px 36px rgba(0,0,0,.7)
+      background:var(--card); width:min(96vw, 760px);
+      border-radius:20px; padding:28px; text-align:center;
+      box-shadow:0 18px 60px rgba(0,0,0,.7)
     }
-    .success h2{ margin:6px 0 8px }
-    .success p{ margin:6px 0; color:#cfcfcf }
-    .kicker{ color:#c4faf8; letter-spacing:.05em; text-transform:uppercase; font-size:12px }
-    .row{ margin-top:10px; font-size:14px; color:#ddd }
+    .success .kicker{ color:#9aa; letter-spacing:.08em; font-size:12px; text-transform:uppercase; margin-top:6px }
+    .success h1{ margin:12px 0 14px; font-size:clamp(22px,3.6vw,36px) }
+    .row{ margin:10px 0 2px; font-size:15px; color:#ddd }
     .badge{
-      display:inline-block; margin-top:10px; padding:6px 10px; border-radius:999px;
+      display:inline-block; margin:12px 0 0; padding:8px 12px; border-radius:999px;
       background:#141414; border:1px solid #262626; font-size:12px; color:#bbb
     }
-    .cta{
-      margin-top:18px; display:inline-block; padding:12px 16px; border-radius:12px;
-      background:#9800ff; color:#fff; text-decoration:none; font-weight:600
+    .actions{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:18px }
+    .btn-ghost{
+      background:transparent; color:#fff; border:1px solid var(--primary);
+      padding:12px 16px; border-radius:12px;
     }
+    .btn-ghost:hover{ background:rgba(152,0,255,.12) }
 
     @media (max-width:900px){
       .main{ padding:8px }
       .card{ max-width:none; width:100%; margin:8px auto; border-radius:12px; padding:16px }
-      input,select,button{ font-size:16px }
+      input,select,.btn{ font-size:16px }
+      .actions .btn{ width:100% } /* stack buttons on mobile */
     }
   </style>
 </head>
@@ -87,7 +101,7 @@
       <select id="tier"></select>
       <div id="price" class="price"></div>
 
-      <button id="submit" disabled>Reserve</button>
+      <button id="submit" class="btn btn-primary" disabled>Reserve</button>
       <div id="msg" style="margin-top:12px; min-height:22px"></div>
     </div>
   </div>
@@ -97,12 +111,17 @@
     <div class="panel">
       <img class="logo" src="logo.png" alt="cyber//core" style="width:180px;height:auto">
       <div class="kicker">Reservation confirmed</div>
-      <h2>You're in — check your email for your QR code.</h2>
+      <h1>You're in — check your email for your QR code.</h1>
 
       <div id="successDetails" class="row"></div>
       <div id="successId" class="badge"></div>
 
-      <a class="cta" href="https://instagram.com/cybercore.rave" target="_blank" rel="noopener">Event details</a>
+      <div class="actions">
+        <!-- Primary: book another ticket -->
+        <button id="again" class="btn btn-primary">Book another ticket</button>
+        <!-- Secondary: event details -->
+        <a class="btn btn-ghost" href="https://instagram.com/cybercore.rave" target="_blank" rel="noopener">Event details</a>
+      </div>
     </div>
   </div>
 
@@ -117,7 +136,7 @@
     const success = document.getElementById('success');
     const successDetails = document.getElementById('successDetails');
     const successId = document.getElementById('successId');
-    const formCard = document.getElementById('formCard');
+    const againBtn = document.getElementById('again');
 
     let API = null;       // detected at runtime
     let tiers = [];       // cached tiers
@@ -178,9 +197,27 @@
       successDetails.textContent = `${name} • ${email} • ${tier}${priceText}`;
       successId.textContent = reservationID ? `Reservation ID: ${reservationID}` : '';
       success.classList.add('show');
+    }
 
-      // ensure it’s visible
-      success.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    function resetForm(){
+      // hide overlay
+      success.classList.remove('show');
+
+      // reset inputs
+      nameEl.disabled = false; emailEl.disabled = false; tierSel.disabled = false;
+      nameEl.value = ''; emailEl.value = '';
+      if (tierSel.options.length) tierSel.selectedIndex = 0;
+
+      // update UI
+      submit.textContent = 'Reserve';
+      updatePrice();
+      updateButton();
+
+      // refresh availability just in case
+      loadTiers();
+
+      // focus name for speed
+      nameEl.focus({ preventScroll:false });
     }
 
     async function reserve(){
@@ -204,7 +241,6 @@
         const json = await res.json();
 
         if (json.ok){
-          // try to pull price for display
           const t = tiers.find(x => x.tier === payload.tier);
           showSuccess({
             name: payload.name,
@@ -238,6 +274,7 @@
       emailEl.addEventListener('input', updateButton);
       tierSel.addEventListener('change', () => { updatePrice(); updateButton(); });
       submit.addEventListener('click', reserve);
+      againBtn.addEventListener('click', resetForm);
       await loadTiers();
     }
     init();

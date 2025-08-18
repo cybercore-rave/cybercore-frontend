@@ -154,6 +154,8 @@
     const successDetails = document.getElementById('successDetails');
     const successId = document.getElementById('successId');
     const againBtn = document.getElementById('again');
+    const CACHE_KEY = 'tiers_cache_v1';
+    const CACHE_TTL_MS = 20000; // 20s front-end cache
 
     let API = null;       // detected at runtime
     let tiers = [];       // cached tiers
@@ -169,6 +171,24 @@
     }
     function showError(text){ msg.style.color = '#ff6b6b'; msg.textContent = text; }
     function showInfo(text){ msg.style.color = '#c4faf8'; msg.textContent = text; }
+    function renderTiers(data){
+  tiers = data || [];
+  tierSel.innerHTML = '';
+  if (!tiers.length){
+    tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
+    priceEl.textContent = '';
+  } else {
+    for (const t of tiers){
+      const opt = document.createElement('option');
+      opt.value = t.tier;
+      opt.textContent = `${t.tier} — ${t.remaining} left`;
+      tierSel.appendChild(opt);
+    }
+    updatePrice();
+  }
+  updateButton();
+}
+
 
     // Live email validation
     function validateEmail(){
@@ -187,22 +207,34 @@
     }
 
     // Detect /api or /api/proxy (tries health then tiers)
-    async function detectApiBase(){
-      const candidates = ['/api', '/api/proxy'];
-      for (const base of candidates){
-        try{
-          const r1 = await fetch(`${base}?endpoint=health`, { cache:'no-store' });
-          const j1 = await r1.json().catch(()=>null);
-          if (j1 && j1.ok) return base;
-        }catch(e){}
-        try{
-          const r2 = await fetch(`${base}?endpoint=tiers`, { cache:'no-store' });
-          const j2 = await r2.json().catch(()=>null);
-          if (j2 && j2.ok) return base;
-        }catch(e){}
-      }
-      return null;
+    async function loadTiers(){
+  msg.textContent = '';
+
+  // 1) Instant render from local cache (if fresh)
+  try {
+    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (cached && (Date.now() - cached.t) < CACHE_TTL_MS) {
+      renderTiers(cached.data);
     }
+  } catch (_) {}
+
+  // 2) Always fetch fresh in background (SWR)
+  try {
+    const res = await fetch(`${API}?endpoint=tiers`, { cache:'no-store' });
+    const json = await res.json();
+    if (json.ok) {
+      renderTiers(json.data);
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), data: json.data })); } catch (_){}
+    } else {
+      // if we had no cache and server failed
+      if (!tiers.length) showError(json.error || 'Could not load tiers.');
+    }
+  } catch (e) {
+    if (!tiers.length) showError('Network error. Could not load tiers.');
+    console.error('loadTiers error:', e);
+  }
+}
+
 
     async function loadTiers(){
       msg.textContent = '';

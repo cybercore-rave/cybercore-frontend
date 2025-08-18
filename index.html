@@ -211,7 +211,7 @@
       updateButton();
 
       try {
-        const res = await fetch(`${API}?endpoint=tiers`, { cache:'no-store' });
+        const res = await fetch('/api/tiers', { cache:'no-store' });
         const json = await res.json();
         if (!json.ok || !Array.isArray(json.data)) throw new Error(json.error || 'Bad response');
 

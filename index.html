@@ -203,7 +203,7 @@
       return null;
     }
 
-    // -------- Load tiers (resilient) --------
+    // -------- Load tiers (resilient + auto-refresh when low) --------
     async function loadTiers(){
       tierSel.disabled = true;
       tierSel.innerHTML = '<option disabled selected>Loading tiers…</option>';
@@ -229,6 +229,15 @@
           }
           updatePrice();
         }
+
+        // ▼ Gentle auto-refresh when any tier is low (≤5 left)
+        const low = Array.isArray(tiers) && tiers.some(t => t.remaining <= 5);
+        clearTimeout(window.__tiersTimer);
+        if (low) {
+          window.__tiersTimer = setTimeout(loadTiers, 6000); // re-check every 6s while low
+        }
+        // ▲
+
         tierSel.disabled = false;
         updateButton();
         msg.textContent = '';

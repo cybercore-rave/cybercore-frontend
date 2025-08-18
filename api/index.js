@@ -20,7 +20,7 @@ function getIp(req) {
 const ALLOW_ORIGINS = new Set([
   "https://cybercorerave.com",
   "https://www.cybercorerave.com",
-  "https://<your-vercel>.vercel.app" // replace with your actual Vercel domain
+  "https://cybercore-frontend-five.vercel.app" // replace with your actual Vercel domain
 ]);
 
 function setCors(req, res) {

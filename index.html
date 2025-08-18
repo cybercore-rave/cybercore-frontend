@@ -121,22 +121,68 @@
       }
     }
 
-    async function reserve(){
-      msg.textContent = '';
-      submit.disabled = true; const old = submit.textContent; submit.textContent = 'Reserving…';
-      try{
-        const res = await fetch(API, {
-          method: 'POST',
-          headers: { 'Content-Type':'application/json' },
-          body: JSON.stringify({
-            endpoint: 'reserve',
-            payload: {
-              name: nameEl.value.trim(),
-              email: emailEl.value.trim(),
-              tier: tierSel.value
-            }
-          })
-        });
+  async function reserve(){
+  // clear + disable while sending
+  msg.textContent = '';
+  msg.style.color = '#cfcfcf';
+  submit.disabled = true;
+  const prev = submit.textContent;
+  submit.textContent = 'Reserving…';
+
+  try {
+    const res = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: 'reserve',
+        payload: {
+          name: nameEl.value.trim(),
+          email: emailEl.value.trim(),
+          tier: tierSel.value
+        }
+      })
+    });
+
+    const json = await res.json();
+
+    if (json.ok) {
+      // ✅ Success UI
+      msg.style.color = '#c4faf8';
+      msg.innerHTML = `You’re in. Check your email for your QR code.${
+        json.reservationID ? `<div style="margin-top:6px;font-size:12px;color:#9aa;">Reservation ID: ${json.reservationID}</div>` : ''
+      }`;
+
+      // lock the form to prevent double-submit
+      nameEl.disabled = true;
+      emailEl.disabled = true;
+      tierSel.disabled = true;
+      submit.textContent = 'Reserved';
+      submit.disabled = true;
+
+      // refresh remaining counts
+      await loadTiers();
+
+      // make sure user sees the message
+      msg.scrollIntoView({behavior:'smooth', block:'center'});
+      return;
+    }
+
+    // ❌ Backend returned an error (show it)
+    msg.style.color = '#ff6b6b';
+    msg.textContent = json.error || 'Error, try again.';
+  } catch (e) {
+    msg.style.color = '#ff6b6b';
+    msg.textContent = 'Network error. Try again.';
+    console.error('reserve error:', e);
+  } finally {
+    // If not locked by success, restore button
+    if (!submit.disabled) {
+      submit.textContent = prev;
+      submit.disabled = false;
+    }
+  }
+}
+
         const json = await res.json();
         if (json.ok){
           showInfo('You’re in. Check your email for your QR code.');

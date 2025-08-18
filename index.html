@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Reserve — cyber//core</title>
-  <!-- Favicon & OS meta -->
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png"> <!-- uses your existing logo -->
-<meta name="theme-color" content="#000000">
 
+  <!-- Favicon & OS meta -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="theme-color" content="#000000">
 
   <style>
     :root{
@@ -142,7 +142,7 @@
   </div>
 
   <script>
-    // DOM refs
+    // -------- DOM refs --------
     const tierSel = document.getElementById('tier');
     const priceEl = document.getElementById('price');
     const nameEl  = document.getElementById('name');
@@ -154,13 +154,11 @@
     const successDetails = document.getElementById('successDetails');
     const successId = document.getElementById('successId');
     const againBtn = document.getElementById('again');
-    const CACHE_KEY = 'tiers_cache_v1';
-    const CACHE_TTL_MS = 20000; // 20s front-end cache
 
-    let API = null;       // detected at runtime
-    let tiers = [];       // cached tiers
+    let API = null;   // detected at runtime
+    let tiers = [];   // current tiers
 
-    // Helpers
+    // -------- UI helpers --------
     function updatePrice(){
       const t = tiers.find(x => x.tier === tierSel.value);
       priceEl.textContent = t ? `Price: $${t.price} TTD` : '';
@@ -171,24 +169,6 @@
     }
     function showError(text){ msg.style.color = '#ff6b6b'; msg.textContent = text; }
     function showInfo(text){ msg.style.color = '#c4faf8'; msg.textContent = text; }
-    function renderTiers(data){
-  tiers = data || [];
-  tierSel.innerHTML = '';
-  if (!tiers.length){
-    tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
-    priceEl.textContent = '';
-  } else {
-    for (const t of tiers){
-      const opt = document.createElement('option');
-      opt.value = t.tier;
-      opt.textContent = `${t.tier} — ${t.remaining} left`;
-      tierSel.appendChild(opt);
-    }
-    updatePrice();
-  }
-  updateButton();
-}
-
 
     // Live email validation
     function validateEmail(){
@@ -206,63 +186,67 @@
       }
     }
 
-    // Detect /api or /api/proxy (tries health then tiers)
-    async function loadTiers(){
-  msg.textContent = '';
-
-  // 1) Instant render from local cache (if fresh)
-  try {
-    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-    if (cached && (Date.now() - cached.t) < CACHE_TTL_MS) {
-      renderTiers(cached.data);
-    }
-  } catch (_) {}
-
-  // 2) Always fetch fresh in background (SWR)
-  try {
-    const res = await fetch(`${API}?endpoint=tiers`, { cache:'no-store' });
-    const json = await res.json();
-    if (json.ok) {
-      renderTiers(json.data);
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), data: json.data })); } catch (_){}
-    } else {
-      // if we had no cache and server failed
-      if (!tiers.length) showError(json.error || 'Could not load tiers.');
-    }
-  } catch (e) {
-    if (!tiers.length) showError('Network error. Could not load tiers.');
-    console.error('loadTiers error:', e);
-  }
-}
-
-
-    async function loadTiers(){
-      msg.textContent = '';
-      const res = await fetch(`${API}?endpoint=tiers`, { cache:'no-store' });
-      const json = await res.json();
-      tiers = json.ok ? json.data : [];
-      tierSel.innerHTML = '';
-      if (!tiers.length){
-        tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
-        priceEl.textContent = '';
-      } else {
-        tiers.forEach(t => {
-          const opt = document.createElement('option');
-          opt.value = t.tier;
-          opt.textContent = `${t.tier} — ${t.remaining} left`;
-          tierSel.appendChild(opt);
-        });
-        updatePrice();
+    // -------- API base detection --------
+    async function detectApiBase(){
+      const bases = ['/api', '/api/index', '/api/proxy'];
+      for (const base of bases){
+        try{
+          const r = await fetch(`${base}?endpoint=tiers`, { cache:'no-store' });
+          const j = await r.json().catch(()=>null);
+          if (j && j.ok && Array.isArray(j.data)) {
+            console.log('Using API base:', base);
+            return base;
+          }
+        }catch(e){}
       }
-      updateButton();
+      console.error('No API base detected.');
+      return null;
     }
 
+    // -------- Load tiers (resilient) --------
+    async function loadTiers(){
+      tierSel.disabled = true;
+      tierSel.innerHTML = '<option disabled selected>Loading tiers…</option>';
+      priceEl.textContent = '';
+      updateButton();
+
+      try {
+        const res = await fetch(`${API}?endpoint=tiers`, { cache:'no-store' });
+        const json = await res.json();
+        if (!json.ok || !Array.isArray(json.data)) throw new Error(json.error || 'Bad response');
+
+        tiers = json.data;
+        tierSel.innerHTML = '';
+        if (!tiers.length){
+          tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
+          priceEl.textContent = '';
+        } else {
+          for (const t of tiers){
+            const opt = document.createElement('option');
+            opt.value = t.tier;
+            opt.textContent = `${t.tier} — ${t.remaining} left`;
+            tierSel.appendChild(opt);
+          }
+          updatePrice();
+        }
+        tierSel.disabled = false;
+        updateButton();
+        msg.textContent = '';
+      } catch (e){
+        console.error('loadTiers error:', e);
+        tierSel.disabled = false;
+        tierSel.innerHTML = '<option disabled selected>Could not load. Tap to retry.</option>';
+        const retry = () => { tierSel.removeEventListener('click', retry); loadTiers(); };
+        tierSel.addEventListener('click', retry, { once:true });
+        showError('Could not load tiers. Tap the dropdown to retry.');
+      }
+    }
+
+    // -------- Success / reset --------
     function showSuccess({ name, email, tier, price, reservationID }){
-      // lock form
       nameEl.disabled = true; emailEl.disabled = true; tierSel.disabled = true; submit.disabled = true;
       submit.textContent = 'Reserved';
 
-      // overlay content
       const priceText = (price != null) ? ` — $${price} TTD` : '';
       successDetails.textContent = `${name} • ${email} • ${tier}${priceText}`;
       successId.textContent = reservationID ? `Reservation ID: ${reservationID}` : '';
@@ -280,6 +264,7 @@
       nameEl.focus({ preventScroll:false });
     }
 
+    // -------- Reserve --------
     async function reserve(){
       msg.textContent = ''; showInfo('');
       submit.disabled = true;
@@ -309,7 +294,7 @@
             price: t ? t.price : undefined,
             reservationID: json.reservationID
           });
-          loadTiers();
+          loadTiers(); // refresh availability behind the overlay
           return;
         }
 
@@ -325,18 +310,24 @@
       }
     }
 
-    // Boot
+    // -------- Boot --------
     async function init(){
       API = await detectApiBase();
       if (!API){ showError('API not reachable.'); return; }
+
       nameEl.addEventListener('input', updateButton);
       emailEl.addEventListener('input', () => { validateEmail(); updateButton(); });
       emailEl.addEventListener('blur',  validateEmail);
       tierSel.addEventListener('change', () => { updatePrice(); updateButton(); });
       submit.addEventListener('click', reserve);
       againBtn.addEventListener('click', resetForm);
+
       await loadTiers();
     }
+
+    // If an old cache key was used previously, clear it once.
+    try { localStorage.removeItem('tiers_cache_v1'); } catch (_) {}
+
     init();
   </script>
 </body>

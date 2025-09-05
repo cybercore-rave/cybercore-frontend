@@ -97,12 +97,12 @@
       background:transparent; border:0; color:var(--accent);
       text-decoration:underline; font-size:12px; padding:0; margin-top:6px; cursor:pointer;
     }
-.link-btn[disabled]{
-    opacity:.6;
-    cursor:wait;
-    text-decoration:none;
-    pointer-events:none;
-  }
+    .link-btn[disabled]{
+      opacity:.6;
+      cursor:wait;
+      text-decoration:none;
+      pointer-events:none;
+    }
     @media (max-width:900px){
       .main{ padding:8px }
       .card{ max-width:none; width:100%; margin:8px auto; border-radius:12px; padding:16px }
@@ -186,10 +186,7 @@
     let API = null;      // '/api' base for POST
     let tiers = [];      // current tiers
     let lowStock = false;
-
-    // Single cache key + TTL
-    const TIER_CACHE_KEY = 'tiers_cache_v2';
-    const TIER_CACHE_TTL = 30_000; // 30s
+    let tiersRequestAbort = null; // AbortController for in-flight fetch
 
     /* ----------------- Helpers ----------------- */
     function updatePrice(){
@@ -235,7 +232,7 @@
 
     async function checkStatus(){
       try {
-        const r = await fetch('/api/status', { cache:'no-store' });
+        const r = await fetch(`/api/status?_=${Date.now()}`, { cache:'no-store' });
         const j = await r.json();
         enforceStatus(j.ok ? !!j.open : true);
       } catch (_) {
@@ -248,25 +245,13 @@
       const bases = ['/api', '/api/index'];
       for (const base of bases){
         try{
-          const r = await fetch('/api/tiers', { cache:'no-store' });
+          const r = await fetch(`/api/tiers?_=${Date.now()}`, { cache:'no-store' });
           const j = await r.json().catch(()=>null);
           if (j && j.ok) { console.log('Using API base:', base); return base; }
         }catch(e){}
       }
       console.error('No API base detected.');
       return null;
-    }
-
-    /* ----------------- Tier cache helpers ----------------- */
-    function getCachedTiers(){
-      try{
-        const c = JSON.parse(localStorage.getItem(TIER_CACHE_KEY) || 'null');
-        if (c && (Date.now() - c.t) < TIER_CACHE_TTL) return c.data;
-      }catch(_){}
-      return null;
-    }
-    function setCachedTiers(data){
-      try{ localStorage.setItem(TIER_CACHE_KEY, JSON.stringify({ t:Date.now(), data })); }catch(_){}
     }
 
     /* ----------------- Render tiers ----------------- */
@@ -293,66 +278,55 @@
       msg.textContent = '';
     }
 
-    /* ----------------- Load tiers (cache + refresh) ----------------- */
-     async function loadTiers({ fromRefresh = false } = {}) {
-    // visual feedback on the refresh link
-    if (fromRefresh) {
-      refreshBtn.dataset.prev = refreshBtn.textContent || 'Refresh availability';
-      refreshBtn.textContent = 'Refreshing…';
-      refreshBtn.setAttribute('disabled', 'true');
-      refreshBtn.setAttribute('aria-busy', 'true');
-    }
-
-    // show loading state in the dropdown
-    tierSel.disabled = true;
-    tierSel.innerHTML = '<option disabled selected>Loading tiers…</option>';
-    priceEl.textContent = '';
-    updateButton();
-
-    try {
-      const res = await fetch('/api/tiers', { cache:'no-store' });
-      const json = await res.json();
-      if (!json.ok || !Array.isArray(json.data)) throw new Error(json.error || 'Bad response');
-
-      tiers = json.data;
-      tierSel.innerHTML = '';
-      if (!tiers.length){
-        tierSel.innerHTML = '<option value="">All QR tiers sold out</option>';
-        priceEl.textContent = '';
-        lowStock = false;
-      } else {
-        for (const t of tiers){
-          const opt = document.createElement('option');
-          opt.value = t.tier;
-          opt.textContent = `${t.tier} — ${t.remaining} left`;
-          tierSel.appendChild(opt);
-        }
-        updatePrice();
-        lowStock = tiers.some(t => t.remaining <= 5);
-      }
-
-      // show refresh link only when stock is low
-      refreshBtn.style.display = lowStock ? 'inline' : 'none';
-
-      tierSel.disabled = false;
-      updateButton();
-      msg.textContent = '';
-    } catch (e){
-      console.error('loadTiers error:', e);
-      tierSel.disabled = false;
-      tierSel.innerHTML = '<option disabled selected>Could not load. Tap to retry.</option>';
-      const retry = () => { tierSel.removeEventListener('click', retry); loadTiers(); };
-      tierSel.addEventListener('click', retry, { once:true });
-      showError('Could not load tiers. Tap the dropdown to retry.');
-    } finally {
+    /* ----------------- Load tiers (always fresh + race-safe) ----------------- */
+    async function loadTiers({ fromRefresh = false } = {}) {
+      // visual feedback on the refresh link
       if (fromRefresh) {
-        refreshBtn.textContent = refreshBtn.dataset.prev || 'Refresh availability';
-        refreshBtn.removeAttribute('disabled');
-        refreshBtn.removeAttribute('aria-busy');
+        refreshBtn.dataset.prev = refreshBtn.textContent || 'Refresh availability';
+        refreshBtn.textContent = 'Refreshing…';
+        refreshBtn.setAttribute('disabled', 'true');
+        refreshBtn.setAttribute('aria-busy', 'true');
+      }
+
+      // cancel any in-flight request to prevent race conditions
+      if (tiersRequestAbort) {
+        try { tiersRequestAbort.abort(); } catch (_) {}
+      }
+      tiersRequestAbort = new AbortController();
+
+      // show loading state in the dropdown
+      tierSel.disabled = true;
+      tierSel.innerHTML = '<option disabled selected>Loading tiers…</option>';
+      priceEl.textContent = '';
+      updateButton();
+
+      try {
+        const buster = Date.now(); // defeat any intermediary caching
+        const res = await fetch(`/api/tiers?_=${buster}`, {
+          cache: 'no-store',
+          signal: tiersRequestAbort.signal,
+        });
+        const json = await res.json();
+        if (!json.ok || !Array.isArray(json.data)) throw new Error(json.error || 'Bad response');
+
+        renderTiers(json.data);
+      } catch (e) {
+        if (e.name === 'AbortError') return; // an explicit cancel; ignore
+        console.error('loadTiers error:', e);
+        tierSel.disabled = false;
+        tierSel.innerHTML = '<option disabled selected>Could not load. Tap to retry.</option>';
+        const retry = () => { tierSel.removeEventListener('click', retry); loadTiers(); };
+        tierSel.addEventListener('click', retry, { once: true });
+        showError('Could not load tiers. Tap the dropdown to retry.');
+      } finally {
+        if (fromRefresh) {
+          refreshBtn.textContent = refreshBtn.dataset.prev || 'Refresh availability';
+          refreshBtn.removeAttribute('disabled');
+          refreshBtn.removeAttribute('aria-busy');
+        }
+        tiersRequestAbort = null;
       }
     }
-  }
-
 
     /* ----------------- Success / reset ----------------- */
     function showSuccess({ name, email, tier, price, reservationID }){
@@ -434,17 +408,14 @@
       tierSel.addEventListener('change', () => { updatePrice(); updateButton(); });
       submit.addEventListener('click', reserve);
       againBtn.addEventListener('click', resetForm);
-      refreshBtn.addEventListener('click', loadTiers);
+      refreshBtn.addEventListener('click', () => loadTiers({ fromRefresh: true }));
+      window.addEventListener('focus', () => loadTiers()); // optional: refresh when user refocuses
 
       await checkStatus();
       await loadTiers();
     }
 
-    // Clean any older cache key (from previous versions)
-    try { localStorage.removeItem('tiers_cache_v1'); } catch (_) {}
-
     init();
-     refreshBtn.addEventListener('click', () => loadTiers({ fromRefresh: true }));
   </script>
 </body>
 </html>
